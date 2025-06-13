@@ -5,13 +5,15 @@
  * @package QQGroupPush
  * @author 落幕
  * @contributor 星野爱 (子比主题适配、论坛绑定、签到、解绑功能)
- * @version 0.0.4
+ * @version 0.0.6
  * 
  * 原作者：落幕（基础推送功能）
  * 子比主题适配及扩展功能：星野爱
  * - 论坛账号绑定功能
  * - 论坛签到功能
  * - 论坛账号解绑功能
+ * - 最新帖子查询功能
+ * - 关键词搜索功能
  * - QQ群消息处理
  */
 
@@ -33,7 +35,7 @@ function qqpush_create_csf_options() {
         'menu_slug'       => 'qqpush-settings',
         'menu_icon'       => 'dashicons-format-chat',
         'menu_position'   => 30,
-        'framework_title' => '子比主题-Q群/QQ推送设置 <small>v0.0.4</small>',
+        'framework_title' => '子比主题-Q群/QQ推送设置 <small>v0.0.6</small>',
         'footer_text'     => '感谢使用Q群/QQ推送插件',
         'footer_after'    => '<p>插件详细说明请访问：<a href="https://hoshinoai.xin" target="_blank">星野爱</a></p>',
         'theme'           => 'light',
@@ -183,6 +185,14 @@ function qqpush_create_csf_options() {
                 'dependency' => array('qq_group_interaction_enable', '==', true),
             ),
             array(
+                'id'      => 'qq_group_search_posts_enable',
+                'type'    => 'switcher',
+                'title'   => '启用搜索帖子功能',
+                'desc'    => '开启后，用户可以通过在QQ群中发送"+ 搜索 关键词"来搜索论坛帖子',
+                'default' => true,
+                'dependency' => array('qq_group_interaction_enable', '==', true),
+            ),
+            array(
                 'id'      => 'qq_group_points_transfer_enable',
                 'type'    => 'switcher',
                 'title'   => '启用积分转账功能',
@@ -198,9 +208,10 @@ function qqpush_create_csf_options() {
                              <p>2. 解绑账号：在QQ群中发送 "+ 论坛解绑"</p>
                              <p>3. 绑定成功后，用户可以发送 "+ 论坛签到" 进行签到</p>
                              <p>4. 查看最新帖子：在QQ群中发送 "+ 最新帖子"</p>
-                             <p>5. 积分转账：在QQ群中发送 "+ 积分转账 @用户 100"</p>
-                             <p>6. 确保您的QQ机器人已正确配置，能接收并转发群消息到本插件</p>
-                             <p>7. 接收消息的API地址为：<code>' . home_url('/wp-json/qqpush/v1/receive') . '</code></p>',
+                             <p>5. 搜索帖子：在QQ群中发送 "+ 搜索 关键词"</p>
+                             <p>6. 积分转账：在QQ群中发送 "+ 积分转账 @用户 100"</p>
+                             <p>7. 确保您的QQ机器人已正确配置，能接收并转发群消息到本插件</p>
+                             <p>8. 接收消息的API地址为：<code>' . home_url('/wp-json/qqpush/v1/receive') . '</code></p>',
                 'dependency' => array('qq_group_interaction_enable', '==', true),
             ),
         )

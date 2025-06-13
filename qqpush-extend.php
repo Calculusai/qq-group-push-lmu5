@@ -4,11 +4,12 @@
  * 
  * @package QQGroupPush
  * @author 星野爱 (https://hoshinoai.xin)
- * @version 0.0.4
+ * @version 0.0.6
  * 
  * 扩展功能列表:
  * - 最新帖子查询功能
  * - 积分转账功能
+ * - 关键词搜索功能
  */
 
 // 防止直接访问
@@ -25,6 +26,9 @@ function qqpush_extend_init() {
     
     // 添加积分转账命令处理到消息处理流程中
     add_filter('qqpush_handle_message_command', 'qqpush_extend_handle_points_transfer_command', 10, 4);
+    
+    // 添加搜索帖子命令处理到消息处理流程中
+    add_filter('qqpush_handle_message_command', 'qqpush_extend_handle_search_posts_command', 10, 4);
 }
 add_action('plugins_loaded', 'qqpush_extend_init');
 
@@ -374,5 +378,142 @@ function qqpush_transfer_points($from_qq_id, $to_qq_id, $points, $group_id) {
         'from_user_id' => $from_user_id,
         'to_user_id' => $to_user_id,
         'points' => $points
+    );
+}
+
+/**
+ * 处理搜索帖子命令
+ * 
+ * @param bool|array $handled 之前是否已处理
+ * @param string $message 消息内容
+ * @param string $qq_id QQ号
+ * @param string $group_id 群号
+ * @return bool|array 处理结果
+ */
+function qqpush_extend_handle_search_posts_command($handled, $message, $qq_id, $group_id) {
+    // 如果消息已被处理，直接返回结果
+    if ($handled !== false) {
+        return $handled;
+    }
+    
+    // 处理搜索帖子命令
+    if (preg_match('/^\s*\+\s*搜索\s+(.+)\s*$/i', $message, $matches)) {
+        error_log('QQ群推送扩展: 检测到搜索帖子命令');
+        
+        // 检查是否启用了搜索帖子功能
+        if (!qqpush_get_option('qq_group_search_posts_enable', true)) {
+            error_log('QQ群推送扩展: 搜索帖子功能未启用');
+            $reply_msg = "搜索帖子功能未启用，请联系管理员";
+            qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+            return array('status' => 'error', 'reason' => 'search_posts_feature_disabled');
+        }
+        
+        // 获取搜索关键词
+        $keyword = trim($matches[1]);
+        
+        if (empty($keyword)) {
+            error_log('QQ群推送扩展: 搜索关键词为空');
+            $reply_msg = "搜索关键词不能为空，请输入要搜索的内容";
+            qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+            return array('status' => 'error', 'reason' => 'empty_keyword');
+        }
+        
+        return qqpush_search_posts($keyword, $qq_id, $group_id);
+    }
+    
+    // 未处理则返回false
+    return false;
+}
+
+/**
+ * 搜索帖子并发送结果到QQ群
+ * 
+ * @param string $keyword 搜索关键词
+ * @param string $qq_id QQ号
+ * @param string $group_id 群号
+ * @return array 处理结果
+ */
+function qqpush_search_posts($keyword, $qq_id, $group_id) {
+    error_log('QQ群推送扩展: 开始搜索帖子，关键词：' . $keyword);
+    
+    // 查询参数
+    $args = array(
+        'post_type'      => 'forum_post',  // 子比主题论坛帖子类型
+        'post_status'    => 'publish',
+        'posts_per_page' => 5,             // 获取5篇相关帖子
+        's'              => $keyword,       // 搜索关键词
+        'orderby'        => 'relevance',    // 按相关度排序
+        'order'          => 'DESC'
+    );
+    
+    // 执行查询
+    $query = new WP_Query($args);
+    
+    if (!$query->have_posts()) {
+        error_log('QQ群推送扩展: 未找到相关帖子');
+        // 构建回复消息
+        $reply_msg = "抱歉，未找到与 \"" . $keyword . "\" 相关的帖子";
+        
+        // 发送回复
+        qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+        
+        return array(
+            'status' => 'success', 
+            'message' => '没有找到相关帖子'
+        );
+    }
+    
+    // 构建帖子列表消息
+    $posts_message = "【搜索结果：" . $keyword . "】\n\n";
+    $count = 1;
+    
+    while ($query->have_posts()) {
+        $query->the_post();
+        
+        // 获取帖子信息
+        $post_id = get_the_ID();
+        $post_title = get_the_title();
+        $post_url = get_permalink();
+        $post_date = get_the_date('Y-m-d H:i');
+        $author_id = get_post_field('post_author', $post_id);
+        $author_name = get_the_author_meta('display_name', $author_id);
+        
+        // 获取帖子所属板块
+        $plate_name = '未分类';
+        $plate_id = get_post_meta($post_id, 'plate_id', true);
+        if ($plate_id) {
+            $plate = get_post($plate_id);
+            if ($plate) {
+                $plate_name = $plate->post_title;
+            }
+        }
+        
+        // 获取回复数量（子比主题特有）
+        $reply_count = get_post_meta($post_id, 'comment_count', true) ?: '0';
+        
+        // 添加到消息中
+        $posts_message .= "{$count}. 【{$plate_name}】{$post_title}\n";
+        $posts_message .= "   作者：{$author_name} | 时间：{$post_date} | 回复：{$reply_count}\n";
+        $posts_message .= "   {$post_url}\n\n";
+        
+        $count++;
+    }
+    
+    // 恢复全局帖子数据
+    wp_reset_postdata();
+    
+    // 添加查看更多链接 - 修正为正确的论坛搜索链接格式
+    $search_url = home_url('/?s=' . urlencode($keyword) . '&type=forum');
+    $posts_message .= "查看更多结果：{$search_url}";
+    
+    error_log('QQ群推送扩展: 发送搜索结果');
+    
+    // 发送到QQ群
+    qqpush_send_group_msg_to_qq($group_id, $posts_message);
+    
+    return array(
+        'status' => 'success',
+        'message' => '已发送搜索结果',
+        'count'   => $count - 1
     );
 } 
