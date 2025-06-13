@@ -2,8 +2,8 @@
 /**
  * Plugin Name: 子比主题-Q群/QQ推送
  * Plugin URI: https://hoshinoai.xin
- * Description: 原作者落幕-发布或更新文章时向QQ群发送通知，支持QQ群消息触发论坛签到。星野爱-子比主题适配、论坛绑定、签到、解绑功能。
- * Version: 0.0.4
+ * Description: 原作者落幕-发布或更新文章时向QQ群发送通知，支持QQ群消息触发论坛签到。星野爱-子比主题适配、论坛绑定、签到、解绑功能、最新帖子查询。
+ * Version: 0.0.5
  * Author: 星野爱
  * Author URI: https://hoshinoai.xin
  * Contributors: 星野爱 (https://hoshinoai.xin)
@@ -17,6 +17,7 @@
  * - 论坛账号绑定功能
  * - 论坛签到功能
  * - 论坛账号解绑功能
+ * - 最新帖子查询功能
  * - QQ群消息处理
  */
 
@@ -28,7 +29,7 @@ if (!defined('ABSPATH')) {
 // 定义插件常量
 define('QQPUSH_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('QQPUSH_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('QQPUSH_VERSION', '0.0.4');
+define('QQPUSH_VERSION', '0.0.5');
 
 // 添加卸载钩子
 register_uninstall_hook(__FILE__, 'qqpush_uninstall');
@@ -73,6 +74,8 @@ if (is_admin()) {
     require_once QQPUSH_PLUGIN_DIR . 'qqpush-admin.php';
 }
 
+// 引入扩展功能文件
+require_once QQPUSH_PLUGIN_DIR . 'qqpush-extend.php';
 
 /**
  * 插件初始化

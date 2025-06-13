@@ -448,8 +448,47 @@ function qqpush_handle_message($request) {
         
         $email = trim($matches[1]);
         error_log('QQ群推送: 尝试绑定邮箱: ' . $email);
-        $result = qqpush_bind_user($qq_id, $email, $group_id, $sender_name);
-        error_log('QQ群推送: 绑定结果: ' . json_encode($result));
+        
+        // 验证邮箱格式
+        if (!is_email($email)) {
+            error_log('QQ群推送: 邮箱格式不正确: ' . $email);
+            $reply_msg = "绑定失败：邮箱格式不正确，请重新输入";
+            qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+            return rest_ensure_response(array('status' => 'error', 'reason' => 'invalid_email_format'));
+        }
+        
+        // 查找对应邮箱的用户
+        $user = get_user_by('email', $email);
+        if (!$user) {
+            error_log('QQ群推送: 未找到邮箱对应的用户');
+            $reply_msg = "绑定失败：未找到邮箱为 {$email} 的用户";
+            qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+            return rest_ensure_response(array('status' => 'error', 'reason' => 'user_not_found'));
+        }
+        
+        // 开始发送验证码
+        $result = qqpush_send_bind_verification_code($qq_id, $email, $group_id);
+        error_log('QQ群推送: 发送验证码结果: ' . json_encode($result));
+        return rest_ensure_response($result);
+    }
+    
+    // 处理验证码绑定命令
+    if (preg_match('/^\s*\+\s*验证码\s+(\d{6})$/i', $message, $matches)) {
+        error_log('QQ群推送: 检测到验证码命令');
+        // 检查是否启用了账号绑定功能
+        if (!qqpush_get_option('qq_group_bind_enable')) {
+            error_log('QQ群推送: 账号绑定功能未启用');
+            $reply_msg = "账号绑定功能未启用，请联系管理员";
+            qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+            return rest_ensure_response(array('status' => 'error', 'reason' => 'bind_feature_disabled'));
+        }
+        
+        $code = trim($matches[1]);
+        error_log('QQ群推送: 尝试验证码: ' . $code);
+        
+        // 验证验证码
+        $result = qqpush_verify_bind_code($qq_id, $code, $group_id);
+        error_log('QQ群推送: 验证码验证结果: ' . json_encode($result));
         return rest_ensure_response($result);
     }
     
@@ -500,6 +539,13 @@ function qqpush_handle_message($request) {
         $result = qqpush_user_checkin($qq_id, $group_id, $sender_name);
         error_log('QQ群推送: 签到结果: ' . json_encode($result));
         return rest_ensure_response($result);
+    }
+    
+    // 添加扩展命令处理钩子
+    $handled = apply_filters('qqpush_handle_message_command', false, $message, $qq_id, $group_id);
+    if ($handled !== false) {
+        error_log('QQ群推送: 命令被扩展功能处理: ' . json_encode($handled));
+        return rest_ensure_response($handled);
     }
     
     // 其他消息不处理
@@ -802,3 +848,218 @@ function qqpush_unbind_user($qq_id, $group_id = '', $sender_name = '') {
         'qq_id' => $qq_id
     );
 }
+
+/**
+ * 发送绑定验证码
+ * 
+ * @param string $qq_id QQ号
+ * @param string $email 邮箱
+ * @param string $group_id 群号
+ * @return array 处理结果
+ */
+function qqpush_send_bind_verification_code($qq_id, $email, $group_id = '') {
+    error_log('QQ群推送: 开始发送绑定验证码，QQ号=' . $qq_id . ', 邮箱=' . $email);
+    
+    // 检查用户是否存在
+    $user = get_user_by('email', $email);
+    if (!$user) {
+        error_log('QQ群推送: 未找到邮箱对应的用户');
+        $reply_msg = "绑定失败：未找到邮箱为 {$email} 的用户";
+        qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+        return array('status' => 'error', 'message' => '未找到该邮箱对应的用户');
+    }
+    
+    // 生成6位数字验证码
+    $code = rand(100000, 999999);
+    
+    // 存储验证码和相关信息
+    $verification_data = array(
+        'qq_id' => $qq_id,
+        'email' => $email,
+        'code' => $code,
+        'user_id' => $user->ID,
+        'time' => time(),
+        'expires' => time() + 1800, // 30分钟有效期
+    );
+    
+    // 存储到数据库或缓存
+    update_option('qqpush_verification_' . $qq_id, $verification_data);
+    
+    // 使用子比主题的邮件函数发送验证码
+    $blog_name = get_bloginfo('name');
+    $title = '[' . $blog_name . '] QQ绑定验证码';
+    $message = '<div style="background-color:#f7f7f7;padding:20px;">
+        <div style="max-width:600px;margin:0 auto;background-color:white;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,0.1);padding:20px;">
+            <h2 style="color:#333;text-align:center;">' . $blog_name . ' - QQ绑定验证码</h2>
+            <p>您正在将QQ号 ' . $qq_id . ' 与您的网站账号进行绑定。</p>
+            <p>如非您本人操作，请忽略此邮件。</p>
+            <p>您的验证码为：</p>
+            <p style="font-size:24px;color:#3095f1;text-align:center;padding:10px;border:1px dashed #ccc;margin:20px 0;"><strong>' . $code . '</strong></p>
+            <p>请在QQ群中发送：<code>+ 验证码 ' . $code . '</code> 完成绑定。</p>
+            <p>验证码30分钟内有效，如果超时请重新获取。</p>
+            <p style="font-size:12px;color:#999;margin-top:30px;text-align:center;">本邮件由系统自动发送，请勿直接回复。</p>
+        </div>
+    </div>';
+    
+    $result = wp_mail($email, $title, $message);
+    
+    if ($result) {
+        // 发送成功，通知用户
+        $reply_msg = "验证码已发送至您的邮箱 {$email}，请查收并在30分钟内完成验证。\n请在群内回复：+ 验证码 [您收到的验证码]";
+        
+        // 在群里回复
+        if (!empty($group_id)) {
+            qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+        }
+        
+        return array(
+            'status' => 'success',
+            'message' => '验证码已发送',
+            'email' => $email
+        );
+    } else {
+        // 发送失败
+        error_log('QQ群推送: 验证码邮件发送失败');
+        $reply_msg = "验证码发送失败，请稍后重试或联系管理员";
+        
+        // 在群里回复
+        if (!empty($group_id)) {
+            qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+        }
+        
+        return array(
+            'status' => 'error',
+            'message' => '验证码发送失败'
+        );
+    }
+}
+
+/**
+ * 验证绑定验证码
+ * 
+ * @param string $qq_id QQ号
+ * @param string $code 验证码
+ * @param string $group_id 群号
+ * @return array 处理结果
+ */
+function qqpush_verify_bind_code($qq_id, $code, $group_id = '') {
+    error_log('QQ群推送: 开始验证绑定验证码，QQ号=' . $qq_id . ', 验证码=' . $code);
+    
+    // 获取存储的验证数据
+    $verification_data = get_option('qqpush_verification_' . $qq_id);
+    
+    if (!$verification_data) {
+        error_log('QQ群推送: 未找到验证数据');
+        $reply_msg = "验证失败：请先发送 + 论坛绑定 您的邮箱 获取验证码";
+        
+        // 在群里回复
+        if (!empty($group_id)) {
+            qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+        }
+        
+        return array(
+            'status' => 'error',
+            'message' => '未找到验证数据'
+        );
+    }
+    
+    // 检查验证码是否已被使用
+    if (isset($verification_data['used']) && $verification_data['used'] === true) {
+        error_log('QQ群推送: 验证码已被使用');
+        $reply_msg = "验证失败：验证码已被使用，请重新发送 + 论坛绑定 您的邮箱 获取新的验证码";
+        
+        // 在群里回复
+        if (!empty($group_id)) {
+            qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+        }
+        
+        // 清除已使用的数据
+        delete_option('qqpush_verification_' . $qq_id);
+        
+        return array(
+            'status' => 'error',
+            'message' => '验证码已被使用'
+        );
+    }
+    
+    // 检查验证码是否过期
+    if (time() > $verification_data['expires']) {
+        error_log('QQ群推送: 验证码已过期');
+        $reply_msg = "验证失败：验证码已过期，请重新发送 + 论坛绑定 您的邮箱 获取验证码";
+        
+        // 在群里回复
+        if (!empty($group_id)) {
+            qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+        }
+        
+        // 清除过期数据
+        delete_option('qqpush_verification_' . $qq_id);
+        
+        return array(
+            'status' => 'error',
+            'message' => '验证码已过期'
+        );
+    }
+    
+    // 检查验证码是否正确
+    if ($verification_data['code'] != $code) {
+        error_log('QQ群推送: 验证码不正确');
+        $reply_msg = "验证失败：验证码不正确，请重新输入";
+        
+        // 在群里回复
+        if (!empty($group_id)) {
+            qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+        }
+        
+        return array(
+            'status' => 'error',
+            'message' => '验证码不正确'
+        );
+    }
+    
+    // 标记验证码为已使用
+    $verification_data['used'] = true;
+    update_option('qqpush_verification_' . $qq_id, $verification_data);
+    
+    // 验证通过，执行绑定
+    $user_id = $verification_data['user_id'];
+    $email = $verification_data['email'];
+    
+    // 绑定QQ号到用户元数据
+    $meta_key = 'qqpush_bound_qq_id';
+    update_user_meta($user_id, $meta_key, $qq_id);
+    error_log('QQ群推送: 成功绑定用户，用户ID=' . $user_id);
+    
+    // 清理验证数据（延迟5分钟清理，防止重复使用）
+    wp_schedule_single_event(time() + 300, 'qqpush_clean_verification_data', array($qq_id));
+    
+    // 获取用户信息
+    $user = get_user_by('id', $user_id);
+    $username = $user->display_name ?: $user->user_login;
+    
+    // 构建绑定成功消息
+    $reply_msg = "绑定成功！您的账号 {$username} 已成功与QQ号关联";
+    
+    // 在群里回复
+    if (!empty($group_id)) {
+        qqpush_send_at_msg_to_qq($group_id, $qq_id, $reply_msg);
+    }
+    
+    return array(
+        'status' => 'success',
+        'message' => '绑定成功',
+        'user_id' => $user_id,
+        'qq_id' => $qq_id
+    );
+}
+
+/**
+ * 清理验证数据的计划任务
+ * 
+ * @param string $qq_id QQ号
+ */
+function qqpush_clean_verification_data($qq_id) {
+    delete_option('qqpush_verification_' . $qq_id);
+    error_log('QQ群推送: 清理验证数据，QQ号=' . $qq_id);
+}
+add_action('qqpush_clean_verification_data', 'qqpush_clean_verification_data');

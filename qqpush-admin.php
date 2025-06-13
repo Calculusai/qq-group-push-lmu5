@@ -175,14 +175,32 @@ function qqpush_create_csf_options() {
                 'dependency' => array('qq_group_interaction_enable', '==', true),
             ),
             array(
+                'id'      => 'qq_group_latest_posts_enable',
+                'type'    => 'switcher',
+                'title'   => '启用最新帖子功能',
+                'desc'    => '开启后，用户可以通过在QQ群中发送"+ 最新帖子"来查看网站最新的5个论坛帖子',
+                'default' => false,
+                'dependency' => array('qq_group_interaction_enable', '==', true),
+            ),
+            array(
+                'id'      => 'qq_group_points_transfer_enable',
+                'type'    => 'switcher',
+                'title'   => '启用积分转账功能',
+                'desc'    => '开启后，用户可以通过在QQ群中发送"+ 积分转账 @用户 数量"来向其他用户转账积分',
+                'default' => false,
+                'dependency' => array('qq_group_interaction_enable', '==', true),
+            ),
+            array(
                 'type'    => 'submessage',
                 'style'   => 'info',
                 'content' => '<p><strong>使用说明：</strong></p>
                              <p>1. 用户需要先绑定账号：在QQ群中发送 "+ 论坛绑定 用户邮箱"</p>
                              <p>2. 解绑账号：在QQ群中发送 "+ 论坛解绑"</p>
                              <p>3. 绑定成功后，用户可以发送 "+ 论坛签到" 进行签到</p>
-                             <p>4. 确保您的QQ机器人已正确配置，能接收并转发群消息到本插件</p>
-                             <p>4. 接收消息的API地址为：<code>' . home_url('/wp-json/qqpush/v1/receive') . '</code></p>',
+                             <p>4. 查看最新帖子：在QQ群中发送 "+ 最新帖子"</p>
+                             <p>5. 积分转账：在QQ群中发送 "+ 积分转账 @用户 100"</p>
+                             <p>6. 确保您的QQ机器人已正确配置，能接收并转发群消息到本插件</p>
+                             <p>7. 接收消息的API地址为：<code>' . home_url('/wp-json/qqpush/v1/receive') . '</code></p>',
                 'dependency' => array('qq_group_interaction_enable', '==', true),
             ),
         )
